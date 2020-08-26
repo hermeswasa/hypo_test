@@ -1,3 +1,11 @@
+/*
+# 本プログラムは研究目的・個人利用での使用のみを許可する．
+  # Author  : hermes
+  # Date    : 2020.07.26
+  # ver     : 0.2.0
+  # Product : 噴霧くんﾂｳﾞｧｲ
+*/
+
 // Configuration
 // OS fault queue programming : queue value = 1
 // OS polarity selection      : OS active LOW
