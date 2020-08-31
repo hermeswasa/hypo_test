@@ -305,7 +305,7 @@ int water_level(){
   int state = 0;
   waterLevel = analogRead(waterLevelPin);
 
-  if(waterLevel >= 600){
+  if(waterLevel >= 200){
     Serial.println("Water Level: OK(" + String(waterLevel) + ")");
     state = 1;
   }
