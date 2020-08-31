@@ -1,12 +1,14 @@
 /*Descriptions*********************************
 ***********************************************
-Motor Pins:       D5, D6, 5V, GND
+Motor Pins:       D9, D10, 5V, GND
 Motor Function:   drv(speed);
 speed must be 100(low) to 255(high).
 
-SSR Names:        ssr1: (Pin8)   ssr2: (Pin9)   ssr3: (Pin10)
+SSR Names:        ssr1: (Pin7)   ssr2: (Pin8)   ssr3: (Pin11)
 SSR Function:     ssr(n)(0(off) or 1(on);
-SSR Ref:          ssr1: LED      ssr2: Aero     ssr3: Pump
+SSR Ref:          ssr1: LED      ssr2: PMP     ssr3: HSN
+
+LED Names:        LED1:(5V), LED2(D12)
 
 
 Error Codes
@@ -16,6 +18,12 @@ Error Codes
 
 ***********************************************
 ***********************************************/
+//Timer Settings
+int w_cnt = 0;
+unsigned long water_timer;
+unsigned long check_timer;
+
+
 //DRV8835 Settings
 int spd = 0;
 
@@ -40,27 +48,48 @@ int waterLevel = 0;     // holds the wator level value
 int waterLevelPin = A0; // wator level sensor pin used
 int w_lev = 0;
 
+//Water Flow Settings
+volatile int flow_frequency; // Measures flow sensor pulses
+unsigned int l_hour; // Calculated litres/hour
+unsigned char flowsensor = 2; // Sensor Input
+unsigned long currentTime;
+unsigned long cloopTime;
 
+void flow () // Interrupt function
+{
+   flow_frequency++;
+}
 
 
 ////////////////////////////////////////////////
 void setup() {
   Serial.begin(9600);
+  //Timer Setup
+  water_timer = millis();
+  check_timer = water_timer;
+  
   //SSR Setup
+  pinMode(7,  OUTPUT);
   pinMode(8,  OUTPUT);
-  pinMode(9,  OUTPUT);
-  pinMode(10, OUTPUT);
+  pinMode(11, OUTPUT);
   //SD18B20 Setup
   sensors.begin();
   //AM2023 Setup
   Wire.begin(); 
-  
+  //Water Flow Setup
+  pinMode(flowsensor, INPUT);
+  digitalWrite(flowsensor, HIGH); // Optional Internal Pull-Up
+  attachInterrupt(0, flow, RISING); // Setup Interrupt
+  sei(); // Enable interrupts
+  currentTime = millis();
+  cloopTime = currentTime;
   
 }
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
  
 void loop() {
+  
   w_tmp1 = water_temp1();
   w_tmp2 = water_temp2();
   w_tmp3 = water_temp3();
@@ -72,7 +101,19 @@ void loop() {
 
   Serial.println();
 
-  if(w_lev==0){
+  if(water_timer >= (check_timer + 60000)){
+    spd = 0;
+    drv(spd);
+    ssr1(1);
+    ssr2(0);
+    ssr3(1);
+    w_cnt++;
+    Serial.println("STATUS: WATER");
+    if(w_cnt > 5){
+      check_timer = water_timer;
+      w_cnt = 0;
+    }
+  }else if(w_lev==0){
     spd = 200;
     drv(spd);
     ssr1(1);
@@ -91,8 +132,8 @@ void loop() {
   }else if(w_tmp1 > 32.0 ||w_tmp2 > 32.0 ||w_tmp3 > 32.0 ||a_tmp > 32.0 || a_hum > 75.0){
     spd = 255;
     drv(spd);
-    ssr1(0);
-    ssr2(1);
+    ssr1(1);
+    ssr2(0);
     ssr3(0); 
     Serial.println("WARNING: VERY HIGH TEMPERATURE");
     drv_rat(spd); 
@@ -113,8 +154,20 @@ void loop() {
     Serial.println("ERROR: SOMETHING IS WRONG");
     drv_rat(spd);
   }
-
-  Serial.println();
+  water_timer = millis();
+  currentTime = millis();
+   // Every second, calculate and print litres/hour
+   if(currentTime >= (cloopTime + 1000))
+   {
+      cloopTime = currentTime; // Updates cloopTime
+      // Pulse frequency (Hz) = 7.5Q, Q is flow rate in L/min.
+      l_hour = (flow_frequency * 60 / 7.5); // (Pulse frequency x 60 min) / 7.5Q = flowrate in L/hour
+      flow_frequency = 0; // Reset Counter
+      Serial.print(l_hour, DEC); // Print litres/hour
+      Serial.println(" L/hour");
+   }
+  Serial.print("Current Time: ");
+  Serial.println(currentTime);
 
   delay(5000);
 }
@@ -134,31 +187,31 @@ void drv_rat(int spd){
 
 void drv(int spd){
   
-  analogWrite(6,spd);
-  analogWrite(5,0);
+  analogWrite(10,spd);
+  analogWrite(9,0);
 }
 
 ///////////////////////////////////////////
 ///////////////////////////////////////////
 void ssr1(int sw){
   if(sw==0){
+    digitalWrite(7,LOW);
+  }else{
+    digitalWrite(7,HIGH);
+  }
+}
+void ssr2(int sw){
+  if(sw==0){
     digitalWrite(8,LOW);
   }else{
     digitalWrite(8,HIGH);
   }
 }
-void ssr2(int sw){
-  if(sw==0){
-    digitalWrite(9,LOW);
-  }else{
-    digitalWrite(9,HIGH);
-  }
-}
 void ssr3(int sw){
   if(sw==0){
-    digitalWrite(10,LOW);
+    digitalWrite(11,LOW);
   }else{
-    digitalWrite(10,HIGH);
+    digitalWrite(11,HIGH);
   }
 }
 ///////////////////////////////////////////
@@ -252,14 +305,17 @@ int water_level(){
   int state = 0;
   waterLevel = analogRead(waterLevelPin);
 
-  if(waterLevel > 800){
+  if(waterLevel >= 600){
     Serial.println("Water Level: OK(" + String(waterLevel) + ")");
     state = 1;
   }
   
-  if(waterLevel < 500) {
+  else {
     Serial.println("Water Level: Empty(" + String(waterLevel) + ")");
     state = 0;
   }
   return state;
 }
+
+///////////////////////////////////////////
+///////////////////////////////////////////
